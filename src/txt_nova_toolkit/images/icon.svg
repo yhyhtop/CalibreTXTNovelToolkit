@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="book" x1="25" y1="16" x2="92" y2="112" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4f9cf7"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#183153" flood-opacity="0.24"/>
+    </filter>
+  </defs>
+  <rect x="23" y="14" width="66" height="100" rx="10" fill="url(#book)" filter="url(#shadow)"/>
+  <path d="M38 14h43c4 0 8 4 8 8v84c-10-4-21-4-31 0V23c-6-2-13-2-20 0Z" fill="#dbeafe" opacity="0.98"/>
+  <path d="M38 14h4v89c5-2 10-3 16-2V23c-6-2-13-2-20 0Z" fill="#ffffff" opacity="0.85"/>
+  <rect x="36" y="47" width="35" height="5" rx="2.5" fill="#1e40af" opacity="0.55"/>
+  <rect x="36" y="61" width="29" height="5" rx="2.5" fill="#1e40af" opacity="0.45"/>
+  <rect x="36" y="75" width="25" height="5" rx="2.5" fill="#1e40af" opacity="0.35"/>
+  <path d="M93 35v36h13L84 96 62 71h13V35Z" fill="#22c55e" stroke="#ffffff" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M93 35v36h13L84 96V35Z" fill="#16a34a" opacity="0.65"/>
+  <g transform="rotate(-9 82 96)">
+    <rect x="55" y="89" width="52" height="24" rx="6" fill="#f97316" stroke="#ffffff" stroke-width="5"/>
+    <circle cx="64" cy="101" r="4" fill="#fff7ed"/>
+    <text x="73" y="105" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#fff7ed">TXT</text>
+  </g>
+</svg>
