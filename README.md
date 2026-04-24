@@ -17,10 +17,10 @@
 
 ## 安装
 
-可安装插件包位于：
+从 GitHub Releases 下载最新插件包：
 
 ```text
-dist/TXTNovaToolkit.zip
+TXTNovaToolkit.zip
 ```
 
 安装步骤：
@@ -28,7 +28,7 @@ dist/TXTNovaToolkit.zip
 1. 打开 Calibre。
 2. 进入 `首选项` -> `高级` -> `插件`。
 3. 点击 `从文件加载插件`。
-4. 选择 `dist/TXTNovaToolkit.zip`。
+4. 选择下载的 `TXTNovaToolkit.zip`。
 5. 重启 Calibre。
 
 如果之前安装过旧版 `TXT Novel Importer`，建议先在 Calibre 插件列表中卸载旧插件，再安装 `TXT Nova Toolkit`。
@@ -124,8 +124,6 @@ L断更 -> 刘备、断更、加料
 ```text
 .
 ├── README.md
-├── dist/
-│   └── TXTNovaToolkit.zip
 ├── docs/
 │   └── TXT Nova Toolkit 开发计划.md
 └── src/
@@ -145,6 +143,8 @@ L断更 -> 刘备、断更、加料
 ```powershell
 Compress-Archive -Path "__init__.py", "ui.py", "plugin-import-name-txt_nova_toolkit.txt", "images" -DestinationPath "..\..\dist\TXTNovaToolkit.zip" -Force
 ```
+
+`dist/` 是本地构建输出目录，不提交到 Git；正式安装包通过 GitHub Releases 发布。
 
 ## 注意事项
 
