@@ -5,7 +5,7 @@ import subprocess
 import sys
 import traceback
 
-from qt.core import QAction, QFileDialog, QMenu
+from qt.core import QAction, QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QLabel, QMenu, QVBoxLayout
 
 from calibre.ebooks.metadata.book.base import Metadata
 from calibre.gui2 import error_dialog, info_dialog
@@ -166,7 +166,7 @@ def safe_filename(name):
     return name or '未命名'
 
 
-def unique_destination_path(directory, stem, ext='.txt'):
+def unique_destination_path(directory, stem, ext):
     stem = safe_filename(stem)
     path = os.path.join(directory, stem + ext)
     if not os.path.exists(path):
@@ -177,6 +177,32 @@ def unique_destination_path(directory, stem, ext='.txt'):
         if not os.path.exists(candidate):
             return candidate
         counter += 1
+
+
+class FormatSelectionDialog(QDialog):
+    def __init__(self, formats, parent=None):
+        QDialog.__init__(self, parent)
+        self.setWindowTitle('选择导出格式')
+        self.checkboxes = []
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel('请选择要导出的格式，可多选：', self))
+
+        default_format = 'TXT' if 'TXT' in formats else (formats[0] if formats else '')
+        for fmt in formats:
+            checkbox = QCheckBox(fmt, self)
+            checkbox.setChecked(fmt == default_format)
+            layout.addWidget(checkbox)
+            self.checkboxes.append(checkbox)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    @property
+    def selected_formats(self):
+        return [checkbox.text() for checkbox in self.checkboxes if checkbox.isChecked()]
 
 
 class TxtNovaToolkitAction(InterfaceAction):
@@ -191,8 +217,9 @@ class TxtNovaToolkitAction(InterfaceAction):
         menu = QMenu(self.gui)
         import_action = QAction(icon, '导入/更新 TXT 小说', self.gui)
         import_action.triggered.connect(self.run)
-        export_action = QAction('导出选中 TXT 小说', self.gui)
-        export_action.triggered.connect(self.export_selected_txt)
+        export_icon = get_icons('images/export.png', self.name)
+        export_action = QAction(export_icon, '导出选中小说', self.gui)
+        export_action.triggered.connect(self.export_selected_books)
         menu.addAction(import_action)
         menu.addAction(export_action)
         self.qaction.setMenu(menu)
@@ -315,35 +342,62 @@ class TxtNovaToolkitAction(InterfaceAction):
             if fmt.upper() != 'TXT':
                 legacy_db.remove_format(book_id, fmt, index_is_id=True, notify=False)
 
-    def export_selected_txt(self):
+    def export_selected_books(self):
         rows = self.gui.library_view.selectionModel().selectedRows()
         if not rows:
-            return error_dialog(self.gui, '无法导出 TXT 小说', '请先在书库中选择至少一本书。', show=True)
+            return error_dialog(self.gui, '无法导出小说', '请先在书库中选择至少一本书。', show=True)
 
         model = self.gui.library_view.model()
         book_ids = [model.id(row) for row in rows]
-        directory = QFileDialog.getExistingDirectory(self.gui, '选择 TXT 导出目录', '')
+        formats = self.available_formats_for_books(book_ids)
+        if not formats:
+            return error_dialog(self.gui, '无法导出小说', '选中的书籍没有可导出的格式。', show=True)
+
+        selected_formats = self.ask_export_formats(formats)
+        if not selected_formats:
+            return
+
+        directory = QFileDialog.getExistingDirectory(self.gui, '选择小说导出目录', '')
         if not directory:
             return
         directory = str(directory)
 
         results = []
         for book_id in book_ids:
-            try:
-                destination = self.export_one_txt(book_id, directory)
-                results.append(('成功', str(book_id), os.path.basename(destination)))
-            except Exception as err:
-                details = '{}\n{}'.format(err, traceback.format_exc())
-                results.append(('失败', str(book_id), details))
+            for fmt in selected_formats:
+                try:
+                    destination = self.export_one_format(book_id, directory, fmt)
+                    results.append(('成功', str(book_id), os.path.basename(destination)))
+                except Exception as err:
+                    details = '{}\n{}'.format(err, traceback.format_exc())
+                    results.append(('失败', str(book_id), '{}: {}'.format(fmt, details)))
         self.open_directory(directory, results)
         self.show_export_summary(results)
 
-    def export_one_txt(self, book_id, directory):
+    def available_formats_for_books(self, book_ids):
+        formats = set()
+        legacy_db = self.gui.current_db
+        for book_id in book_ids:
+            raw_formats = legacy_db.formats(book_id, index_is_id=True) or ''
+            formats.update(x.strip().upper() for x in raw_formats.split(',') if x.strip())
+        return sorted(formats, key=lambda fmt: (fmt != 'TXT', fmt))
+
+    def ask_export_formats(self, formats):
+        dialog = FormatSelectionDialog(formats, self.gui)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return []
+        selected = dialog.selected_formats
+        if not selected:
+            error_dialog(self.gui, '无法导出小说', '请至少选择一种导出格式。', show=True)
+        return selected
+
+    def export_one_format(self, book_id, directory, fmt):
         legacy_db = self.gui.current_db
         db = legacy_db.new_api
-        if not legacy_db.has_format(book_id, 'TXT', index_is_id=True):
+        fmt = fmt.upper()
+        if not legacy_db.has_format(book_id, fmt, index_is_id=True):
             title = db.field_for('title', book_id) or '未知书名'
-            raise RuntimeError('《{}》没有 TXT 格式'.format(title))
+            raise RuntimeError('《{}》没有 {} 格式'.format(title, fmt))
 
         comments = db.field_for('comments', book_id) or ''
         stem = first_comment_line(comments)
@@ -352,11 +406,11 @@ class TxtNovaToolkitAction(InterfaceAction):
             authors = normalize_authors(db.field_for('authors', book_id))
             stem = '{} - {}'.format(title, ' & '.join(authors) if authors else '佚名')
 
-        source = legacy_db.format_abspath(book_id, 'TXT', index_is_id=True)
+        source = legacy_db.format_abspath(book_id, fmt, index_is_id=True)
         if not source or not os.path.exists(source):
-            raise RuntimeError('TXT 文件不存在或无法访问')
+            raise RuntimeError('{} 文件不存在或无法访问'.format(fmt))
 
-        destination = unique_destination_path(directory, stem, '.txt')
+        destination = unique_destination_path(directory, stem, '.' + fmt.lower())
         shutil.copyfile(source, destination)
         return destination
 
