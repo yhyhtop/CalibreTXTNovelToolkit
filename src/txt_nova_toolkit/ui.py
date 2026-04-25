@@ -5,7 +5,10 @@ import subprocess
 import sys
 import traceback
 
-from qt.core import QAction, QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QLabel, QMenu, QVBoxLayout
+from qt.core import (
+    QAction, QAbstractItemView, QDialog, QDialogButtonBox, QFileDialog, QLabel,
+    QListWidget, QListWidgetItem, QMenu, QSize, Qt, QVBoxLayout
+)
 
 from calibre.ebooks.metadata.book.base import Metadata
 from calibre.gui2 import error_dialog, info_dialog
@@ -180,20 +183,32 @@ def unique_destination_path(directory, stem, ext):
 
 
 class FormatSelectionDialog(QDialog):
-    def __init__(self, formats, parent=None):
+    def __init__(self, format_counts, icon_map, parent=None):
         QDialog.__init__(self, parent)
         self.setWindowTitle('选择导出格式')
-        self.checkboxes = []
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel('请选择要导出的格式，可多选：', self))
+        layout.addWidget(QLabel('选择导出的格式', self))
 
+        formats = sorted(format_counts, key=lambda fmt: (fmt != 'TXT', fmt))
         default_format = 'TXT' if 'TXT' in formats else (formats[0] if formats else '')
+        self.format_list = QListWidget(self)
+        self.format_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.format_list.setIconSize(QSize(48, 48))
+        self.format_list.setMinimumSize(420, 300)
+        self.format_list.itemDoubleClicked.connect(lambda _item: self.accept())
+
         for fmt in formats:
-            checkbox = QCheckBox(fmt, self)
-            checkbox.setChecked(fmt == default_format)
-            layout.addWidget(checkbox)
-            self.checkboxes.append(checkbox)
+            item = QListWidgetItem('{} [{}]'.format(fmt, format_counts[fmt]), self.format_list)
+            item.setData(Qt.ItemDataRole.UserRole, fmt)
+            item.setSizeHint(QSize(380, 72))
+            item.setIcon(icon_map.get(fmt, icon_map.get('GENERIC')))
+            self.format_list.addItem(item)
+            if fmt == default_format:
+                item.setSelected(True)
+                self.format_list.setCurrentItem(item)
+
+        layout.addWidget(self.format_list)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self)
         buttons.accepted.connect(self.accept)
@@ -202,7 +217,7 @@ class FormatSelectionDialog(QDialog):
 
     @property
     def selected_formats(self):
-        return [checkbox.text() for checkbox in self.checkboxes if checkbox.isChecked()]
+        return [item.data(Qt.ItemDataRole.UserRole) for item in self.format_list.selectedItems()]
 
 
 class TxtNovaToolkitAction(InterfaceAction):
@@ -349,11 +364,11 @@ class TxtNovaToolkitAction(InterfaceAction):
 
         model = self.gui.library_view.model()
         book_ids = [model.id(row) for row in rows]
-        formats = self.available_formats_for_books(book_ids)
-        if not formats:
+        format_counts = self.available_formats_for_books(book_ids)
+        if not format_counts:
             return error_dialog(self.gui, '无法导出小说', '选中的书籍没有可导出的格式。', show=True)
 
-        selected_formats = self.ask_export_formats(formats)
+        selected_formats = self.ask_export_formats(format_counts)
         if not selected_formats:
             return
 
@@ -375,21 +390,38 @@ class TxtNovaToolkitAction(InterfaceAction):
         self.show_export_summary(results)
 
     def available_formats_for_books(self, book_ids):
-        formats = set()
+        format_counts = {}
         legacy_db = self.gui.current_db
         for book_id in book_ids:
             raw_formats = legacy_db.formats(book_id, index_is_id=True) or ''
-            formats.update(x.strip().upper() for x in raw_formats.split(',') if x.strip())
-        return sorted(formats, key=lambda fmt: (fmt != 'TXT', fmt))
+            for fmt in [x.strip().upper() for x in raw_formats.split(',') if x.strip()]:
+                format_counts[fmt] = format_counts.get(fmt, 0) + 1
+        return format_counts
 
-    def ask_export_formats(self, formats):
-        dialog = FormatSelectionDialog(formats, self.gui)
+    def ask_export_formats(self, format_counts):
+        icon_map = self.format_icon_map()
+        dialog = FormatSelectionDialog(format_counts, icon_map, self.gui)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return []
         selected = dialog.selected_formats
         if not selected:
             error_dialog(self.gui, '无法导出小说', '请至少选择一种导出格式。', show=True)
         return selected
+
+    def format_icon_map(self):
+        icons = get_icons([
+            'images/formats/txt.png',
+            'images/formats/epub.png',
+            'images/formats/azw3.png',
+            'images/formats/generic.png',
+        ], self.name)
+        return {
+            'TXT': icons.get('images/formats/txt.png'),
+            'EPUB': icons.get('images/formats/epub.png'),
+            'AZW3': icons.get('images/formats/azw3.png'),
+            'MOBI': icons.get('images/formats/azw3.png'),
+            'GENERIC': icons.get('images/formats/generic.png'),
+        }
 
     def export_one_format(self, book_id, directory, fmt):
         legacy_db = self.gui.current_db
