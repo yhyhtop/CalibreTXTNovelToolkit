@@ -137,6 +137,15 @@ def normalize_authors(authors):
     return [str(x).strip() for x in authors if str(x).strip()]
 
 
+def existing_status_from_tags(tags):
+    text = ' '.join(str(tag) for tag in (tags or ()))
+    if '连载' in text:
+        return 'serial'
+    if any(x in text for x in ('完结', '完本', '全本', '断更', DUPLICATE_TAG)):
+        return 'finished'
+    return 'unknown'
+
+
 def prepend_comment_line(new_line, old_comments, limit=5):
     old_comments = old_comments or ''
     # Comments created by this plugin are plain text. Strip simple HTML if the
@@ -276,11 +285,22 @@ class TxtNovaToolkitAction(InterfaceAction):
             book_id = self.add_new_book(parsed, duplicate=False)
             return '新增连载书籍 #{}'.format(book_id), book_id
 
+        if parsed.should_mark_duplicate_if_matched and matches:
+            if len(matches) > 1:
+                raise RuntimeError('找到多个同书名同作者记录，已跳过，请手动处理')
+            existing_status = self.existing_record_status(matches[0])
+            if existing_status != 'finished':
+                return self.update_existing(matches[0], parsed, replace_tags=True), matches[0]
+
         duplicate = parsed.should_mark_duplicate_if_matched and bool(matches)
         book_id = self.add_new_book(parsed, duplicate=duplicate)
         if duplicate:
             return '新增重复记录 #{}'.format(book_id), book_id
         return '新增书籍 #{}'.format(book_id), book_id
+
+    def existing_record_status(self, book_id):
+        tags = self.gui.current_db.new_api.field_for('tags', book_id) or ()
+        return existing_status_from_tags(tags)
 
     def find_existing_books(self, title, author):
         db = self.gui.current_db.new_api
@@ -319,7 +339,7 @@ class TxtNovaToolkitAction(InterfaceAction):
             apply_import_tags=False
         )
 
-    def update_existing(self, book_id, parsed):
+    def update_existing(self, book_id, parsed, replace_tags=False):
         legacy_db = self.gui.current_db
         db = legacy_db.new_api
         now = utcnow()
@@ -343,7 +363,9 @@ class TxtNovaToolkitAction(InterfaceAction):
             db.set_field(field, value_map, allow_case_change=True)
 
         existing_tags = list(db.field_for('tags', book_id) or ())
-        if not existing_tags:
+        if replace_tags:
+            legacy_db.set_tags(book_id, [generated_tag(parsed)], notify=False)
+        elif not existing_tags:
             legacy_db.set_tags(book_id, [generated_tag(parsed)], notify=False)
 
         legacy_db.update_last_modified((book_id,), now=now)
